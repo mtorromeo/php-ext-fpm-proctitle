@@ -1,0 +1,25 @@
+{
+    "name": "mtorromeo/fpm-proctitle",
+    "type": "php-ext",
+    "description": "Automatic, configurable process titles for php-fpm workers while they serve a request",
+    "keywords": ["php-fpm", "fpm", "proctitle", "process title", "setproctitle", "extension"],
+    "homepage": "https://github.com/mtorromeo/php-ext-fpm-proctitle",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Massimiliano Torromeo",
+            "email": "massimiliano.torromeo@gmail.com"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/mtorromeo/php-ext-fpm-proctitle/issues",
+        "source": "https://github.com/mtorromeo/php-ext-fpm-proctitle"
+    },
+    "require": {
+        "php": ">=7.0 <8.6"
+    },
+    "php-ext": {
+        "extension-name": "fpm_proctitle",
+        "os-families": ["linux"]
+    }
+}

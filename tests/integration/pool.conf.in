@@ -1,0 +1,20 @@
+[global]
+pid = @DIR@/php-fpm.pid
+error_log = @DIR@/php-fpm.log
+daemonize = no
+
+[www]
+listen = @LISTEN@
+pm = static
+pm.max_children = 1
+clear_env = yes
+env[FOO] = bar
+catch_workers_output = yes
+
+[api]
+listen = @LISTEN2@
+pm = static
+pm.max_children = 1
+clear_env = yes
+env[FOO] = baz
+php_admin_value[fpm_proctitle.format] = "%p|%{DOCUMENT_URI}"

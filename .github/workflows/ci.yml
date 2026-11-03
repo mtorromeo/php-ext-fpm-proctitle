@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['7.0', '7.1', '7.2', '7.3', '7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5']
+    steps:
+      - uses: actions/checkout@v5
+
+      # PHP CLI on the runner drives the FastCGI client and the checks
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+
+      - name: Build, phpt and integration tests in php:${{ matrix.php }}-fpm
+        run: tests/integration/run.sh docker php:${{ matrix.php }}-fpm
+
+  zts:
+    name: ZTS build (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    container: php:${{ matrix.php }}-zts
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['7.4', '8.5']
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build and run phpt
+        env:
+          TERM: dumb
+          NO_INTERACTION: '1'
+        run: |
+          phpize
+          ./configure
+          make
+          make test | tee test.log
+          ! grep -q '^FAIL' test.log
+          grep -q 'Tests failed *: *0 ' test.log
+
+  pie:
+    name: PIE install (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    container: php:${{ matrix.php }}-fpm
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1', '8.5']
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install PIE and build tools
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends libtool unzip curl ca-certificates > /dev/null
+          curl -fsSLo /usr/local/bin/pie https://github.com/php/pie/releases/latest/download/pie.phar
+          chmod +x /usr/local/bin/pie
+      - name: pie install from this checkout
+        run: |
+          # a path repository is symlinked by Composer: use a clean, writable copy
+          cp -r "$GITHUB_WORKSPACE" /tmp/ext
+          rm -rf /tmp/ext/.git
+          cd /tmp
+          pie repository:add path /tmp/ext
+          pie install 'mtorromeo/fpm-proctitle:*@dev'
+      - name: Extension is enabled for CLI and php-fpm
+        run: |
+          php -m | grep -x fpm_proctitle
+          php-fpm -m | grep -x fpm_proctitle
