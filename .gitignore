@@ -40,3 +40,6 @@ tests/*.log
 tests/*.out
 tests/*.php
 tests/*.sh
+
+# fuzzing
+tests/fuzz/build/

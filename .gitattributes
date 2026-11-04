@@ -4,3 +4,4 @@
 /.gitignore         export-ignore
 /CLAUDE.md          export-ignore
 /tests/integration  export-ignore
+/tests/fuzz         export-ignore

@@ -74,3 +74,28 @@ jobs:
         run: |
           php -m | grep -x fpm_proctitle
           php-fpm -m | grep -x fpm_proctitle
+
+  fuzz:
+    name: Fuzz (PHP ${{ matrix.php }} headers)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 7.x and 8.x differ in the sapi_module.getenv prototype
+        php: ['7.4', '8.5']
+    steps:
+      - uses: actions/checkout@v5
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - name: Replay the seed corpus
+        run: tests/fuzz/run.sh regress
+      - name: Fuzz each target for 120s
+        run: tests/fuzz/run.sh fuzz 120
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: fuzz-crashes-php${{ matrix.php }}
+          path: tests/fuzz/build/crash-*
+          if-no-files-found: ignore

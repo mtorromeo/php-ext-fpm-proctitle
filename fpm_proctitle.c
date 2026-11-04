@@ -90,26 +90,13 @@ static void php_fpm_proctitle_init_globals(zend_fpm_proctitle_globals *g)
 }
 
 /* {{{ /proc/self/stat parsing */
-static int pt_read_proc_stat(uintptr_t *arg_start, uintptr_t *arg_end,
-                             uintptr_t *env_start, uintptr_t *env_end)
+/* data is NUL-terminated and modified in place */
+static int pt_parse_proc_stat(char *data, uintptr_t *arg_start, uintptr_t *arg_end,
+                              uintptr_t *env_start, uintptr_t *env_end)
 {
-	char data[4096];
-	FILE *fp;
-	size_t n;
 	char *p, *tok, *save = NULL;
 	int field;
 	unsigned long long v[4] = {0, 0, 0, 0};
-
-	fp = fopen("/proc/self/stat", "r");
-	if (!fp) {
-		return FAILURE;
-	}
-	n = fread(data, 1, sizeof(data) - 1, fp);
-	fclose(fp);
-	if (n == 0) {
-		return FAILURE;
-	}
-	data[n] = '\0';
 
 	/* field 2 (comm) may contain spaces and parentheses: skip to the last ')' */
 	p = strrchr(data, ')');
@@ -128,8 +115,8 @@ static int pt_read_proc_stat(uintptr_t *arg_start, uintptr_t *arg_end,
 			}
 		}
 	}
-	if (field != 51) {
-		return FAILURE; /* kernel < 3.5 */
+	if (!tok) {
+		return FAILURE; /* no field 51: kernel < 3.5 */
 	}
 
 	*arg_start = (uintptr_t) v[0];
@@ -137,6 +124,27 @@ static int pt_read_proc_stat(uintptr_t *arg_start, uintptr_t *arg_end,
 	*env_start = (uintptr_t) v[2];
 	*env_end   = (uintptr_t) v[3];
 	return SUCCESS;
+}
+
+static int pt_read_proc_stat(uintptr_t *arg_start, uintptr_t *arg_end,
+                             uintptr_t *env_start, uintptr_t *env_end)
+{
+	char data[4096];
+	FILE *fp;
+	size_t n;
+
+	fp = fopen("/proc/self/stat", "r");
+	if (!fp) {
+		return FAILURE;
+	}
+	n = fread(data, 1, sizeof(data) - 1, fp);
+	fclose(fp);
+	if (n == 0) {
+		return FAILURE;
+	}
+	data[n] = '\0';
+
+	return pt_parse_proc_stat(data, arg_start, arg_end, env_start, env_end);
 }
 /* }}} */
 
