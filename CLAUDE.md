@@ -26,6 +26,7 @@ CI (`.github/workflows/ci.yml`) has three jobs:
 
 The phpt tests can only check the CLI (where the extension is a no-op). The real behaviour is covered by the integration tests:
 - `run.sh` starts php-fpm from `pool.conf.in`, with two pools: `www` and `api` (the latter has a per-pool `php_admin_value` format).
+- It also starts a second master from `gap.conf.in` under `env -i` with `LD_PRELOAD` of `envgap.c` (compiled with `cc` on the host or in the image), which replaces `PT_GAP` before `main()` so that FPM's buffer ends before the area does. `title.php` reports the end of FPM's buffer (`gap`) and whether `PT_SENTINEL` is intact.
 - `check.php` sends requests through `fcgi_client.php`, a standalone FastCGI client in PHP. Per-request ini overrides go through the `PHP_VALUE` FastCGI param.
 - `title.php` reports `/proc/self/cmdline`, `getenv('FOO')` and the size of the argv+environ area.
 - New behaviour should get a `check(...)` in `check.php`.
@@ -45,7 +46,9 @@ The phpt tests can only check the CLI (where the extension is a no-op). The real
 - **`pt_init_worker`** runs lazily on the first RINIT whenever `getpid()` changes, i.e. after fork. It:
   - saves the idle title and derives the pool name from it (`"php-fpm: pool " NAME`);
   - picks the capacity: the full area; or argv only, if some `environ[i]` still points inside the area; or `strlen` of the current title as a fallback;
-  - clamps the capacity to 4095, the most Linux shows in `/proc/<pid>/cmdline`.
+  - clamps the capacity to 4095, the most Linux shows in `/proc/<pid>/cmdline`;
+  - then shrinks it to the zero bytes that follow the idle title, i.e. to what FPM itself cleared. FPM's buffer stops at the first gap between argv/environ strings, and the strings past it may still be referenced (cached `getenv()` pointers).
+  - If `pt_idle` is already set, the process was forked by a worker (`pcntl_fork()`): the inherited state is kept, and RSHUTDOWN restores the title regardless of the pid.
 - **RINIT** is skipped when `SG(server_context)` is NULL (e.g. `php-fpm -i`). It expands the format into `pt_work`, reading values via `sapi_module.getenv` (no allocation; cast for the const difference between 7.x and 8.x) and replacing control characters with `?`. Then `pt_write` writes it, zero-filling only up to the previous length.
 - **RSHUTDOWN** restores the idle title.
 

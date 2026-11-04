@@ -2,9 +2,10 @@
 /**
  * Integration checks against a running php-fpm with fpm_proctitle loaded.
  *
- * Usage: php check.php HOST:PORT SCRIPT_FILENAME HOST:PORT_API [CMDLINE_READER...]
+ * Usage: php check.php HOST:PORT SCRIPT_FILENAME HOST:PORT_API HOST:PORT_GAP [CMDLINE_READER...]
  *
  * SCRIPT_FILENAME is the path of title.php as seen by php-fpm.
+ * HOST:PORT_GAP is a second master started with envgap.so (see gap.conf.in).
  * CMDLINE_READER is an optional command prefix used to read
  * /proc/<pid>/cmdline of the worker (e.g. "docker exec CONTAINER").
  */
@@ -12,7 +13,8 @@
 $addr   = $argv[1];
 $script = $argv[2];
 $addr2  = $argv[3];
-$reader = array_slice($argv, 4);
+$addr3  = $argv[4];
+$reader = array_slice($argv, 5);
 $client = __DIR__ . '/fcgi_client.php';
 
 $failures = 0;
@@ -119,6 +121,15 @@ check('pool api: php_admin_value format', 'api|/title.php', $r['title']);
 check('pool api: env', 'baz', $r['foo']);
 usleep(100000);
 check('pool api: idle title restored', 'php-fpm: pool api', cmdline($r['pid']));
+
+// 7. environ not contiguous in the master: stay inside FPM's own buffer
+$r = req(array('REQUEST_URI' => $long), $addr3);
+echo "     (area: {$r['cap']} bytes, FPM buffer: " . var_export($r['gap'], true) . " bytes, title: " . strlen((string) $r['title']) . " bytes)\n";
+check('env gap: area larger than FPM buffer', true, $r['gap'] !== null && $r['gap'] < $r['cap']);
+check('env gap: strings past the gap intact', true, $r['sentinel']);
+check('env gap: truncated at the end of FPM buffer', $r['gap'], strlen((string) $r['title']));
+usleep(100000);
+check('env gap: idle title restored', 'php-fpm: pool gap', cmdline($r['pid']));
 
 echo "\n$checks checks, $failures failures\n";
 exit($failures ? 1 : 0);

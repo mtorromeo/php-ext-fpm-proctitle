@@ -183,20 +183,17 @@ static int pt_environ_in_buffer(void)
 /* First request served by this process (i.e. after fork). */
 static void pt_init_worker(void)
 {
-	size_t len;
+	size_t len, i;
 
 	pt_pid = getpid();
+
+	/* forked by a worker (e.g. pcntl_fork()): same buffer, keep its state */
+	if (pt_idle) {
+		return;
+	}
+
 	pt_mode = PT_METHOD_NONE;
 	pt_cap = 0;
-
-	if (pt_idle) {
-		free(pt_idle);
-		pt_idle = NULL;
-	}
-	if (pt_work) {
-		free(pt_work);
-		pt_work = NULL;
-	}
 	pt_pool = "?";
 
 	if (!pt_buf) {
@@ -225,6 +222,18 @@ static void pt_init_worker(void)
 		pt_mode = PT_METHOD_NONE;
 		pt_cap = 0;
 		return;
+	}
+
+	/* Stay within the bytes FPM zeroed after its title: its buffer stops at
+	 * the first gap between argv/environ strings (e.g. a variable replaced
+	 * by setenv() before fpm_env_init_main), and the strings past that gap
+	 * may still be referenced by pointers cached from getenv(). */
+	if (pt_mode != PT_METHOD_STRLEN) {
+		i = len + 1;
+		while (i <= pt_cap && pt_buf[i] == '\0') {
+			i++;
+		}
+		pt_cap = i - 1;
 	}
 
 	pt_idle = strdup(pt_buf);
@@ -414,8 +423,11 @@ PHP_MSHUTDOWN_FUNCTION(fpm_proctitle)
 	free(pt_idle);
 	free(pt_work);
 	pt_idle = pt_work = NULL;
+	pt_pool = "?";
+	pt_pid = 0;
 	pt_mode = PT_METHOD_NONE;
 	pt_cap = 0;
+	pt_changed = 0;
 
 	return SUCCESS;
 }
@@ -461,7 +473,8 @@ PHP_RINIT_FUNCTION(fpm_proctitle)
 /* {{{ PHP_RSHUTDOWN_FUNCTION */
 PHP_RSHUTDOWN_FUNCTION(fpm_proctitle)
 {
-	if (pt_changed && pt_mode != PT_METHOD_NONE && pt_pid == getpid()) {
+	/* also in a child forked during the request: the buffer is inherited */
+	if (pt_changed && pt_mode != PT_METHOD_NONE) {
 		pt_write(pt_idle, pt_idle_len);
 	}
 	pt_changed = 0;

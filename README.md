@@ -109,7 +109,11 @@ binary, so the extension writes directly into the same buffer:
    that `arg_start` matches `argv[0]`.
 2. **First request of each worker**: saves the title set by FPM (`php-fpm: pool NAME`) and derives the
    pool name from it. It then checks that no environment variable still points inside the area; if
-   one does, only the `argv` space is used.
+   one does, only the `argv` space is used. It never goes past the bytes FPM zeroed after its own
+   title: if the master's argv/environ strings were not contiguous (for example because something
+   replaced a variable with `setenv()` at startup), FPM's buffer is shorter than the area and the
+   strings after it are left alone. A process forked by a worker during a request (`pcntl_fork()`)
+   keeps the worker's state.
 3. **RINIT**: builds the title by reading the FastCGI parameters through `sapi_module.getenv`, without
    going through `$_SERVER`, and writes it into the buffer.
 4. **RSHUTDOWN**: restores the original title.
@@ -143,4 +147,6 @@ written in PHP (`tests/integration/fcgi_client.php`). They check:
   control characters, very long URIs truncated exactly at the end of the area, and a second pool with
   `php_admin_value[fpm_proctitle.format]`;
 - that the title is restored when the request ends;
-- that the pool's environment variables stay intact.
+- that the pool's environment variables stay intact;
+- with a second master whose environ is not contiguous (`envgap.c`, loaded with `LD_PRELOAD`), that
+  the title stops at the end of FPM's buffer and the strings after it are not overwritten.
