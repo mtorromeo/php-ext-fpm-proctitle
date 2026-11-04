@@ -32,6 +32,8 @@
 sapi_module_struct sapi_module;
 sapi_globals_struct sapi_globals;
 
+extern int pt_stub_log_calls; /* stubs.c */
+
 static const char *params[MAX_PARAMS];
 static size_t nparams;
 
@@ -63,6 +65,8 @@ static void reset_state(void)
 	pt_cap = 0;
 	pt_last_len = 0;
 	pt_changed = 0;
+	pt_logged = 0;
+	pt_stub_log_calls = 0;
 }
 
 #define CHECK(cond) do { \
@@ -212,6 +216,10 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 		pt_pid = 0;
 	}
 	request(area, snap, area_size, (flags & FL_SECOND_FORMAT) && nparams ? params[0] : fields[1], idle);
+
+	/* a failure is logged once per worker, forked children included */
+	CHECK(pt_stub_log_calls <= 1);
+	CHECK(pt_stub_log_calls == 0 || (pt_mode == PT_METHOD_NONE && fpm_proctitle_globals.enabled));
 
 	environ = saved_environ;
 	reset_state();

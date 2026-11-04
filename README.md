@@ -113,7 +113,10 @@ binary, so the extension writes directly into the same buffer:
    title: if the master's argv/environ strings were not contiguous (for example because something
    replaced a variable with `setenv()` at startup), FPM's buffer is shorter than the area and the
    strings after it are left alone. A process forked by a worker during a request (`pcntl_fork()`)
-   keeps the worker's state.
+   keeps the worker's state. If the title cannot be changed, the extension stays inactive in that
+   worker and logs `fpm_proctitle: cannot change the process title of pid N: REASON` once per worker:
+   to `error_log` if set, otherwise to FPM's log (with `catch_workers_output = yes`). The message never
+   goes through the request's error handler.
 3. **RINIT**: builds the title by reading the FastCGI parameters through `sapi_module.getenv`, without
    going through `$_SERVER`, and writes it into the buffer.
 4. **RSHUTDOWN**: restores the original title.

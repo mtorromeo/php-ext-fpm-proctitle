@@ -29,6 +29,7 @@ CI (`.github/workflows/ci.yml`) has four jobs:
 
 Fuzzing (`tests/fuzz/`, libFuzzer + ASan/UBSan, NTS headers only):
 - The harnesses `#include "../../fpm_proctitle.c"` to reach the static functions and globals. `stubs.c` supplies the PHP symbols without libphp: a real `ap_php_snprintf` (PHP's headers map `snprintf` to it), and `abort()` for the INI/phpinfo functions. A newly referenced PHP function needs a stub there.
+- `stubs.c` counts the `php_log_err*` calls in `pt_stub_log_calls`, and `fuzz_title` checks that at most one failure is logged per run.
 - `fuzz_title` builds an argv+environ area of exactly `cap_env + 1` bytes, then runs the real RINIT/RSHUTDOWN for two requests (optionally with a simulated `pcntl_fork()` in between). Its oracles: nothing past `pt_cap` changes; the title is sanitized and followed by zeros; the idle title is restored. `fuzz_proc_stat` checks `pt_parse_proc_stat` against a naive tokenizer.
 - When a crash is fixed, add the reproducer to `tests/fuzz/corpus/<target>/`.
 
@@ -57,6 +58,7 @@ The phpt tests can only check the CLI (where the extension is a no-op). The real
   - clamps the capacity to 4095, the most Linux shows in `/proc/<pid>/cmdline`;
   - then shrinks it to the zero bytes that follow the idle title, i.e. to what FPM itself cleared. FPM's buffer stops at the first gap between argv/environ strings, and the strings past it may still be referenced (cached `getenv()` pointers).
   - If `pt_idle` is already set, the process was forked by a worker (`pcntl_fork()`): the inherited state is kept, and RSHUTDOWN restores the title regardless of the pid.
+  - Every failure branch (no buffer, title longer than the capacity, `pt_cap == 0`, out of memory) calls `pt_log_failure`. It uses `php_log_err`, so the message goes to `error_log` or to FPM's stderr, never to the request's error handler. The `pt_logged` flag limits it to once per worker; `pcntl_fork()` children inherit the flag.
 - **RINIT** is skipped when `SG(server_context)` is NULL (e.g. `php-fpm -i`). It expands the format into `pt_work`, reading values via `sapi_module.getenv` (no allocation; cast for the const difference between 7.x and 8.x) and replacing control characters with `?`. Then `pt_write` writes it, zero-filling only up to the previous length.
 - **RSHUTDOWN** restores the idle title.
 

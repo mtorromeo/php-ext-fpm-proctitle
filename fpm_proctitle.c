@@ -75,6 +75,7 @@ static size_t     pt_idle_len = 0;
 static const char *pt_pool = "?";
 static char      *pt_work = NULL;    /* scratch buffer, pt_cap + 1 bytes */
 static int        pt_changed = 0;    /* title modified during this request */
+static int        pt_logged = 0;     /* failure already logged by this worker */
 
 PHP_INI_BEGIN()
 	STD_PHP_INI_BOOLEAN("fpm_proctitle.enabled", "1", PHP_INI_ALL, OnUpdateBool,
@@ -188,6 +189,22 @@ static int pt_environ_in_buffer(void)
 	return 0;
 }
 
+/* To the error_log, or to FPM's log (worker stderr) when it is not set:
+ * never through the request's error handler. Once per worker: the flag is
+ * inherited by its pcntl_fork() children, while the master never sets it. */
+static void pt_log_failure(const char *reason)
+{
+	char msg[256];
+
+	if (pt_logged) {
+		return;
+	}
+	pt_logged = 1;
+	snprintf(msg, sizeof(msg), "fpm_proctitle: cannot change the process title of pid %ld: %s",
+	         (long) pt_pid, reason);
+	php_log_err(msg);
+}
+
 /* First request served by this process (i.e. after fork). */
 static void pt_init_worker(void)
 {
@@ -205,6 +222,7 @@ static void pt_init_worker(void)
 	pt_pool = "?";
 
 	if (!pt_buf) {
+		pt_log_failure("title buffer not found");
 		return;
 	}
 
@@ -229,6 +247,7 @@ static void pt_init_worker(void)
 		/* should never happen: do not touch anything */
 		pt_mode = PT_METHOD_NONE;
 		pt_cap = 0;
+		pt_log_failure("the current title is longer than its buffer");
 		return;
 	}
 
@@ -251,6 +270,7 @@ static void pt_init_worker(void)
 		free(pt_work);
 		pt_idle = pt_work = NULL;
 		pt_mode = PT_METHOD_NONE;
+		pt_log_failure(pt_cap == 0 ? "no room for a title" : "out of memory");
 		pt_cap = 0;
 		return;
 	}
@@ -436,6 +456,7 @@ PHP_MSHUTDOWN_FUNCTION(fpm_proctitle)
 	pt_mode = PT_METHOD_NONE;
 	pt_cap = 0;
 	pt_changed = 0;
+	pt_logged = 0;
 
 	return SUCCESS;
 }

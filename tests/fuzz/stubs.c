@@ -20,6 +20,22 @@ int ap_php_snprintf(char *buf, size_t len, const char *format, ...)
 	return n;
 }
 
+/* pt_log_failure(): counted, so the harness can check it runs once */
+int pt_stub_log_calls = 0;
+
+void php_log_err(const char *msg)                                   /* PHP 7.0 */
+{
+	(void) msg;
+	pt_stub_log_calls++;
+}
+
+void php_log_err_with_severity(const char *msg, int syslog_type)    /* PHP >= 7.1 */
+{
+	(void) msg;
+	(void) syslog_type;
+	pt_stub_log_calls++;
+}
+
 /* MINIT/MSHUTDOWN/MINFO only, never called by the harnesses */
 #define UNREACHABLE(name) void name(void) { abort(); }
 
